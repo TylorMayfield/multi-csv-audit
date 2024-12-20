@@ -1,9 +1,83 @@
 [
   {
-    "id": "1734693465345",
-    "name": "Tet",
-    "description": "Test",
-    "columns": [],
-    "created": "2024-12-20T11:17:45.345Z"
+    "id": "1734706115839",
+    "name": "MDM Users",
+    "description": "",
+    "columns": [
+      {
+        "name": "Username",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Full Name",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Domain",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Email",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Phone Number",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Location",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Authentication Type",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Status",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "User Source",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "User Identifier",
+        "type": "string",
+        "required": false
+      },
+      {
+        "name": "Last Updated Date",
+        "type": "string",
+        "required": false
+      }
+    ],
+    "created": "2024-12-20T14:48:35.839Z"
+  },
+  {
+    "id": "1734706115840",
+    "name": "MDM Devices",
+    "description": "",
+    "columns": [
+      { "name": "Device Name", "type": "string", "required": false },
+      { "name": "Device ID", "type": "string", "required": false },
+      { "name": "Username", "type": "string", "required": false },
+      { "name": "Model", "type": "string", "required": false },
+      { "name": "Operating System", "type": "string", "required": false },
+      { "name": "Installed Date", "type": "string", "required": false },
+      { "name": "Last Reported", "type": "string", "required": false },
+      { "name": "Mailbox Managed", "type": "string", "required": false },
+      { "name": "Email Address", "type": "string", "required": false },
+      { "name": "Managed Type", "type": "string", "required": false }
+    ],
+    "created": "2024-12-20T14:50:00.000Z"
   }
 ]

@@ -1,1 +1,64 @@
-{}
+{
+  "1734706115839-1734706115840": {
+    "sourceType": "1734706115839",
+    "targetType": "1734706115840",
+    "columnMappings": [
+      {
+        "sourceColumn": "Username",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Full Name",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Domain",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Email",
+        "targetColumn": "Email Address",
+        "transformation": "lowercase"
+      },
+      {
+        "sourceColumn": "Phone Number",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Location",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Authentication Type",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Status",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "User Source",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "User Identifier",
+        "targetColumn": "",
+        "transformation": "none"
+      },
+      {
+        "sourceColumn": "Last Updated Date",
+        "targetColumn": "",
+        "transformation": "none"
+      }
+    ],
+    "created": "2024-12-20T15:45:17.276Z"
+  }
+}
