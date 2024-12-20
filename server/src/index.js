@@ -1,239 +1,291 @@
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
-const winston = require('winston');
-const fs = require('fs');
-const { initDatabase, runQuery, getResults } = require('./models/database');
-const CSVProcessor = require('./services/csvProcessor');
-const CSVTypeManager = require('./services/csvTypeManager');
-const ReportGenerator = require('./services/reportGenerator');
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import fs from 'fs/promises';
+import { createReadStream } from 'fs';
+import { parse } from 'csv-parse';
 
-// Initialize Express app
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const app = express();
-const port = process.env.PORT || 3001;
+const port = 3001;
 
-// Configure CORS
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Configure logging
-const logger = winston.createLogger({
-    level: 'info',
-    format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json()
-    ),
-    transports: [
-        new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'logs/combined.log' })
-    ]
-});
+// Setup storage directories
+const DATA_DIR = join(__dirname, '../data');
+const UPLOADS_DIR = join(DATA_DIR, 'uploads');
+const TYPES_FILE = join(DATA_DIR, 'csvTypes.json');
+const MAPPINGS_FILE = join(DATA_DIR, 'mappings.json');
+const PROCESSED_DIR = join(DATA_DIR, 'processed');
+
+// Ensure directories exist
+await fs.mkdir(DATA_DIR, { recursive: true });
+await fs.mkdir(UPLOADS_DIR, { recursive: true });
+await fs.mkdir(PROCESSED_DIR, { recursive: true });
+
+// Initialize JSON files if they don't exist
+try {
+    await fs.access(TYPES_FILE);
+} catch {
+    await fs.writeFile(TYPES_FILE, JSON.stringify([]));
+}
+
+try {
+    await fs.access(MAPPINGS_FILE);
+} catch {
+    await fs.writeFile(MAPPINGS_FILE, JSON.stringify({}));
+}
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../../uploads');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
+        cb(null, UPLOADS_DIR);
     },
     filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + '-' + file.originalname);
     }
 });
 
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
         if (file.mimetype !== 'text/csv') {
-            return cb(new Error('Only CSV files are allowed'));
+            cb(new Error('Only CSV files are allowed'));
+            return;
         }
         cb(null, true);
     }
 });
 
-// Initialize database
-initDatabase().catch(err => {
-    logger.error('Database initialization error:', err);
-    process.exit(1);
-});
-
-// CSV Type Management Routes
-app.post('/api/csv-types', async (req, res) => {
-    try {
-        const typeId = await CSVTypeManager.createType(req.body);
-        res.json({ id: typeId });
-    } catch (error) {
-        logger.error('Error creating CSV type:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
+// Routes for CSV Types
 app.get('/api/csv-types', async (req, res) => {
     try {
-        const types = await getResults('SELECT * FROM csv_types');
+        const types = JSON.parse(await fs.readFile(TYPES_FILE, 'utf-8'));
         res.json(types);
     } catch (error) {
-        logger.error('Error fetching CSV types:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to fetch CSV types' });
     }
 });
 
-app.get('/api/csv-types/:id', async (req, res) => {
+app.post('/api/csv-types', async (req, res) => {
     try {
-        const type = await CSVTypeManager.getTypeDefinition(req.params.id);
-        res.json(type);
+        const types = JSON.parse(await fs.readFile(TYPES_FILE, 'utf-8'));
+        const newType = {
+            id: Date.now().toString(),
+            ...req.body,
+            created: new Date().toISOString()
+        };
+        types.push(newType);
+        await fs.writeFile(TYPES_FILE, JSON.stringify(types, null, 2));
+        res.json(newType);
     } catch (error) {
-        logger.error('Error fetching CSV type:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to create CSV type' });
     }
 });
 
-app.post('/api/csv-types/:id/mappings', async (req, res) => {
+// Routes for Column Mappings
+app.get('/api/mappings', async (req, res) => {
     try {
-        await CSVTypeManager.addColumnMapping({
-            csvTypeId: req.params.id,
-            ...req.body
-        });
-        res.json({ success: true });
+        const mappings = JSON.parse(await fs.readFile(MAPPINGS_FILE, 'utf-8'));
+        res.json(mappings);
     } catch (error) {
-        logger.error('Error adding column mapping:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to fetch mappings' });
     }
 });
 
-// File Upload and Processing Routes
-app.post('/api/upload', upload.single('csvFile'), async (req, res) => {
+app.post('/api/mappings', async (req, res) => {
+    try {
+        const mappings = JSON.parse(await fs.readFile(MAPPINGS_FILE, 'utf-8'));
+        const { sourceType, targetType, columnMappings } = req.body;
+        const mappingKey = `${sourceType}-${targetType}`;
+        
+        mappings[mappingKey] = {
+            sourceType,
+            targetType,
+            columnMappings,
+            created: new Date().toISOString()
+        };
+        
+        await fs.writeFile(MAPPINGS_FILE, JSON.stringify(mappings, null, 2));
+        res.json(mappings[mappingKey]);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create mapping' });
+    }
+});
+
+// File Upload and Processing
+app.post('/api/upload', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        // Insert file record
-        const result = await runQuery(
-            `INSERT INTO files (filename, original_name, source, status) 
-             VALUES (?, ?, ?, ?)`,
-            [req.file.filename, req.file.originalname, req.body.source, 'pending']
+        const fileInfo = {
+            id: Date.now().toString(),
+            originalName: req.file.originalname,
+            filename: req.file.filename,
+            type: req.body.type,
+            uploadDate: new Date().toISOString()
+        };
+
+        // Save file info
+        const processedPath = join(PROCESSED_DIR, `${fileInfo.id}.json`);
+        await fs.writeFile(processedPath, JSON.stringify(fileInfo));
+
+        // Process CSV file
+        const records = [];
+        const parser = createReadStream(req.file.path)
+            .pipe(parse({
+                columns: true,
+                skip_empty_lines: true
+            }));
+
+        for await (const record of parser) {
+            records.push(record);
+        }
+
+        // Save processed records
+        await fs.writeFile(
+            join(PROCESSED_DIR, `${fileInfo.id}-data.json`),
+            JSON.stringify(records, null, 2)
         );
 
-        // Process the CSV file
-        CSVProcessor.processFile(result.lastID, req.file.path, req.body.source)
-            .catch(err => logger.error('CSV processing error:', err));
+        res.json(fileInfo);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to process file' });
+    }
+});
 
-        res.json({
-            id: result.lastID,
-            filename: req.file.originalname,
-            source: req.body.source
+// Get processed files
+app.get('/api/files', async (req, res) => {
+    try {
+        const files = await fs.readdir(PROCESSED_DIR);
+        const fileInfos = await Promise.all(
+            files
+                .filter(f => !f.endsWith('-data.json'))
+                .map(async (file) => {
+                    const content = await fs.readFile(join(PROCESSED_DIR, file), 'utf-8');
+                    return JSON.parse(content);
+                })
+        );
+        res.json(fileInfos);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch files' });
+    }
+});
+
+// Get file data
+app.get('/api/files/:id/data', async (req, res) => {
+    try {
+        const data = await fs.readFile(
+            join(PROCESSED_DIR, `${req.params.id}-data.json`),
+            'utf-8'
+        );
+        res.json(JSON.parse(data));
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch file data' });
+    }
+});
+
+// Merge records
+app.post('/api/merge', async (req, res) => {
+    try {
+        const { files: fileIds, keyFields, strategy } = req.body;
+
+        // Load data from all files
+        const allData = await Promise.all(
+            fileIds.map(async (fileId) => {
+                const data = await fs.readFile(
+                    join(PROCESSED_DIR, `${fileId}-data.json`),
+                    'utf-8'
+                );
+                return JSON.parse(data);
+            })
+        );
+
+        // Create a map to store merged records
+        const mergedRecords = new Map();
+        let conflicts = 0;
+
+        // Process each file's data
+        allData.forEach((fileData, fileIndex) => {
+            fileData.forEach(record => {
+                // Create key from specified key fields
+                const key = keyFields
+                    .map(field => record[field])
+                    .join('|');
+
+                if (!mergedRecords.has(key)) {
+                    // New record
+                    mergedRecords.set(key, { ...record });
+                } else {
+                    // Existing record - merge based on strategy
+                    conflicts++;
+                    const existing = mergedRecords.get(key);
+                    
+                    Object.keys(record).forEach(field => {
+                        if (keyFields.includes(field)) return; // Skip key fields
+
+                        switch (strategy) {
+                            case 'latest':
+                                existing[field] = record[field];
+                                break;
+                            case 'first':
+                                // Keep existing value
+                                break;
+                            case 'concatenate':
+                                if (record[field] && existing[field] !== record[field]) {
+                                    existing[field] = `${existing[field]}; ${record[field]}`;
+                                }
+                                break;
+                        }
+                    });
+                }
+            });
         });
-    } catch (error) {
-        logger.error('Upload error:', error);
-        res.status(500).json({ error: 'Failed to process upload' });
-    }
-});
 
-// Discrepancy Routes
-app.get('/api/files/:id/discrepancies', async (req, res) => {
-    try {
-        const discrepancies = await getResults(`
-            SELECT d.*, f.original_name as filename, r.record_data
-            FROM discrepancies d
-            JOIN files f ON d.file_id = f.id
-            JOIN records r ON d.record_id = r.id
-            WHERE d.file_id = ?
-            ORDER BY d.severity DESC, d.created_at DESC
-        `, [req.params.id]);
-        res.json(discrepancies);
-    } catch (error) {
-        logger.error('Error fetching discrepancies:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        // Convert merged records back to array
+        const mergedData = Array.from(mergedRecords.values());
 
-app.get('/api/discrepancies/summary', async (req, res) => {
-    try {
-        const summary = await getResults(`
-            SELECT 
-                f.source,
-                d.discrepancy_type,
-                d.severity,
-                COUNT(*) as count
-            FROM discrepancies d
-            JOIN files f ON d.file_id = f.id
-            GROUP BY f.source, d.discrepancy_type, d.severity
-            ORDER BY count DESC
-        `);
-        res.json(summary);
-    } catch (error) {
-        logger.error('Error fetching discrepancy summary:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+        // Save merged data
+        const mergeId = Date.now().toString();
+        const mergedFilePath = join(PROCESSED_DIR, `merged-${mergeId}.json`);
+        await fs.writeFile(mergedFilePath, JSON.stringify(mergedData, null, 2));
 
-// Existing routes
-app.get('/api/uploads', async (req, res) => {
-    try {
-        const uploads = await getResults(`
-            SELECT id, original_name as filename, source, upload_date, record_count, status
-            FROM files
-            ORDER BY upload_date DESC
-            LIMIT 10
-        `);
-        res.json(uploads);
-    } catch (error) {
-        logger.error('Error fetching uploads:', error);
-        res.status(500).json({ error: 'Failed to fetch uploads' });
-    }
-});
+        // Create merge result file
+        const mergeInfo = {
+            id: mergeId,
+            originalName: 'merged-data.csv',
+            filename: `merged-${mergeId}.json`,
+            type: 'merged',
+            uploadDate: new Date().toISOString(),
+            sourceFiles: fileIds,
+            keyFields,
+            strategy,
+            totalRecords: mergedData.length,
+            conflicts
+        };
 
-app.get('/api/stats', async (req, res) => {
-    try {
-        const stats = await ReportGenerator.getSummaryStats();
-        res.json(stats);
-    } catch (error) {
-        logger.error('Error fetching stats:', error);
-        res.status(500).json({ error: 'Failed to fetch statistics' });
-    }
-});
+        await fs.writeFile(
+            join(PROCESSED_DIR, `${mergeId}.json`),
+            JSON.stringify(mergeInfo)
+        );
 
-app.get('/api/columns', async (req, res) => {
-    try {
-        const columns = await ReportGenerator.getAvailableColumns();
-        res.json(columns);
+        res.json(mergeInfo);
     } catch (error) {
-        logger.error('Error fetching columns:', error);
-        res.status(500).json({ error: 'Failed to fetch columns' });
+        console.error('Merge error:', error);
+        res.status(500).json({ error: 'Failed to merge records' });
     }
-});
-
-app.post('/api/reports', async (req, res) => {
-    try {
-        const report = await ReportGenerator.generateReport(req.body);
-        
-        if (req.body.format === 'csv') {
-            res.header('Content-Type', 'text/csv');
-            res.header('Content-Disposition', 'attachment; filename=report.csv');
-        } else if (req.body.format === 'pdf') {
-            res.header('Content-Type', 'application/pdf');
-            res.header('Content-Disposition', 'attachment; filename=report.pdf');
-        }
-        
-        res.send(report);
-    } catch (error) {
-        logger.error('Error generating report:', error);
-        res.status(500).json({ error: 'Failed to generate report' });
-    }
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    logger.error(err.stack);
-    res.status(500).json({ error: err.message });
 });
 
 // Start server
 app.listen(port, () => {
-    logger.info(`Server running on port ${port}`);
     console.log(`Server running on port ${port}`);
 });

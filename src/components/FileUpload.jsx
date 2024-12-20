@@ -1,94 +1,163 @@
-import { useState } from 'react';
-import { CloudArrowUpIcon } from '@heroicons/react/24/outline';
+import { useState, useCallback } from 'react';
+import { CloudArrowUpIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 
 export default function FileUpload() {
-  const [file, setFile] = useState(null);
-  const [source, setSource] = useState('');
+    const [files, setFiles] = useState([]);
+    const [uploading, setUploading] = useState(false);
+    const [types, setTypes] = useState([]);
+    const [selectedType, setSelectedType] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!file || !source) return;
+    // Fetch CSV types on mount
+    const fetchTypes = async () => {
+        try {
+            const response = await fetch('/api/csv-types');
+            if (response.ok) {
+                const data = await response.json();
+                setTypes(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch types:', error);
+        }
+    };
 
-    const formData = new FormData();
-    formData.append('csvFile', file);
-    formData.append('source', source);
+    // Fetch uploaded files
+    const fetchFiles = async () => {
+        try {
+            const response = await fetch('/api/files');
+            if (response.ok) {
+                const data = await response.json();
+                setFiles(data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch files:', error);
+        }
+    };
 
-    try {
-      const response = await fetch('http://localhost:3001/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (response.ok) {
-        // Handle success
-        setFile(null);
-        setSource('');
-      } else {
-        // Handle error
-        console.error('Upload failed');
-      }
-    } catch (error) {
-      console.error('Error uploading file:', error);
-    }
-  };
+    const onDrop = useCallback(async (acceptedFiles) => {
+        if (!selectedType) {
+            alert('Please select a CSV type first');
+            return;
+        }
 
-  return (
-    <div className="card">
-      <h2 className="text-xl font-semibold mb-4">Upload CSV File</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="source" className="block text-sm font-medium text-gray-700 mb-1">
-            Data Source
-          </label>
-          <select
-            id="source"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="input"
-            required
-          >
-            <option value="">Select a source</option>
-            <option value="active-directory">Active Directory</option>
-            <option value="verizon">Verizon</option>
-            <option value="mdm">MDM</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
+        setUploading(true);
+        try {
+            for (const file of acceptedFiles) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('type', selectedType);
 
-        <div>
-          <label htmlFor="csvFile" className="block text-sm font-medium text-gray-700 mb-1">
-            CSV File
-          </label>
-          <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-            <div className="space-y-1 text-center">
-              <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
-              <div className="flex text-sm text-gray-600">
-                <label
-                  htmlFor="file-upload"
-                  className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
-                >
-                  <span>Upload a file</span>
-                  <input
-                    id="file-upload"
-                    name="file-upload"
-                    type="file"
-                    className="sr-only"
-                    accept=".csv"
-                    onChange={(e) => setFile(e.target.files[0])}
-                    required
-                  />
-                </label>
-                <p className="pl-1">or drag and drop</p>
-              </div>
-              <p className="text-xs text-gray-500">CSV files only</p>
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Upload failed');
+                }
+            }
+            fetchFiles();
+        } catch (error) {
+            console.error('Upload error:', error);
+            alert('Failed to upload file(s)');
+        } finally {
+            setUploading(false);
+        }
+    }, [selectedType]);
+
+    // Handle file input change
+    const handleFileChange = (event) => {
+        const fileList = event.target.files;
+        if (fileList) {
+            onDrop(Array.from(fileList));
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Upload Section */}
+            <div className="card">
+                <h2 className="text-lg font-semibold mb-4">Upload CSV Files</h2>
+                
+                {/* Type Selection */}
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Select CSV Type
+                    </label>
+                    <select
+                        value={selectedType}
+                        onChange={(e) => setSelectedType(e.target.value)}
+                        className="input"
+                    >
+                        <option value="">Select a type...</option>
+                        {types.map((type) => (
+                            <option key={type.id} value={type.id}>
+                                {type.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Upload Area */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                    <div className="text-center">
+                        <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
+                        <div className="mt-4 flex text-sm leading-6 text-gray-600">
+                            <label
+                                htmlFor="file-upload"
+                                className="relative cursor-pointer rounded-md bg-white font-semibold text-primary-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-primary-600 focus-within:ring-offset-2 hover:text-primary-500"
+                            >
+                                <span>Upload files</span>
+                                <input
+                                    id="file-upload"
+                                    name="file-upload"
+                                    type="file"
+                                    className="sr-only"
+                                    multiple
+                                    accept=".csv"
+                                    onChange={handleFileChange}
+                                    disabled={uploading || !selectedType}
+                                />
+                            </label>
+                            <p className="pl-1">or drag and drop</p>
+                        </div>
+                        <p className="text-xs leading-5 text-gray-600">CSV files only</p>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
 
-        <button type="submit" className="btn btn-primary w-full">
-          Upload
-        </button>
-      </form>
-    </div>
-  );
+            {/* File List */}
+            <div className="card">
+                <h2 className="text-lg font-semibold mb-4">Uploaded Files</h2>
+                <div className="space-y-4">
+                    {files.map((file) => (
+                        <div
+                            key={file.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                        >
+                            <div className="flex items-center space-x-3">
+                                <DocumentTextIcon className="h-6 w-6 text-gray-400" />
+                                <div>
+                                    <p className="text-sm font-medium text-gray-900">
+                                        {file.originalName}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                        Uploaded on {new Date(file.uploadDate).toLocaleDateString()}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="text-sm text-gray-500">
+                                Type: {types.find(t => t.id === file.type)?.name || 'Unknown'}
+                            </div>
+                        </div>
+                    ))}
+
+                    {files.length === 0 && (
+                        <p className="text-center text-sm text-gray-500 py-4">
+                            No files uploaded yet
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
