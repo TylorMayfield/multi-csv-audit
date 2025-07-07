@@ -23,9 +23,10 @@ export const getMergeResults = async (req, res) => {
 // Merge records controller
 export const mergeRecords = async (req, res) => {
   try {
-    const { files: fileIds, strategy, keyFields, caseSensitive } = req.body;
+    const { files: fileIds, keyFields, strategy = 'latest', caseSensitive = false } = req.body;
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
+    
     // Import uploadedFiles.json
     const uploadedFiles = JSON.parse(
       await fs.promises.readFile(
@@ -34,38 +35,65 @@ export const mergeRecords = async (req, res) => {
       )
     );
     const fileMap = Object.fromEntries(
-      uploadedFiles.map((file) => [file.id, file.filename])
+      uploadedFiles.map((file) => [file.id, file.filename.replace(/\.csv$/, '.json')])
     );
 
     console.log("Starting merge process...");
     console.log("Files to process:", fileIds);
-    console.log("Key fields configuration:", keyFields);
+    console.log("Key fields:", keyFields);
+    console.log("Strategy:", strategy);
 
     // Read and parse all files
     const allData = [];
+    const fileStats = [];
     for (const fileId of fileIds) {
       try {
         const filePath = join(PROCESSED_DIR, `${fileMap[fileId]}`);
         console.log(`Reading file: ${filePath}`);
         const fileContent = await fs.promises.readFile(filePath, "utf8");
         const parsedData = JSON.parse(fileContent);
+
+        // Validate key field exists in file
+        const keyField = keyFields[fileId];
+        if (!keyField) {
+          throw new Error(`No key field specified for file ${fileMap[fileId]}`);
+        }
+
+        const hasKeyField = parsedData.length > 0 && keyField in parsedData[0];
+        if (!hasKeyField) {
+          throw new Error(
+            `Key field '${keyField}' not found in file ${fileMap[fileId]}`
+          );
+        }
+
         console.log(`File ${fileId} contains ${parsedData.length} records`);
         console.log(`Sample record from ${fileId}:`, parsedData[0]);
-        allData.push(parsedData);
+
+        allData.push({
+          fileId,
+          keyField: keyField,
+          data: parsedData,
+        });
+
+        fileStats.push({
+          fileId,
+          fileName: fileMap[fileId],
+          recordCount: parsedData.length,
+          keyField: keyField,
+        });
       } catch (error) {
         console.error(`Error reading file ${fileId}:`, error);
         throw error;
       }
     }
 
-    const mergedResult = {};
+    const mergedResult = new Map();
+    const duplicates = new Map(); // Track duplicate keys for reporting
     console.log(`Total files loaded: ${allData.length}`);
 
     // Process each file's data
-    allData.forEach((fileData, index) => {
-      const fileId = fileIds[index];
-      const key = keyFields[fileId];
-      console.log(`\nProcessing file ${fileId} with key field: ${key}`);
+    allData.forEach(({ fileId, keyField, data: fileData }) => {
+      console.log(`\nProcessing file ${fileId} with key field ${keyField}`);
 
       if (!Array.isArray(fileData)) {
         console.error(`Data for file ${fileId} is not an array:`, fileData);
@@ -81,32 +109,68 @@ export const mergeRecords = async (req, res) => {
             return;
           }
 
-          const mergeKey = caseSensitive
-            ? String(record[key]).toLowerCase()
-            : String(record[key]).toLowerCase()
-            ? String(record[key]).toLowerCase()
-            : undefined;
-
-          if (!mergeKey) {
+          const keyValue = record[keyField];
+          if (keyValue === undefined || keyValue === null) {
             console.warn(
-              `No merge key found for record ${recordIndex} in file ${fileId}`
+              `Missing key field '${keyField}' in record ${recordIndex} of file ${fileId}`
             );
             return;
           }
 
-          console.log(`Processing record with key: ${mergeKey}`);
+          // Handle case sensitivity
+          const mergeKey = caseSensitive
+            ? String(keyValue)
+            : String(keyValue).toLowerCase();
 
-          if (!mergedResult[mergeKey]) {
-            mergedResult[mergeKey] = { ...record };
+          // Track duplicates
+          if (mergedResult.has(mergeKey)) {
+            if (!duplicates.has(mergeKey)) {
+              duplicates.set(mergeKey, [fileStats[fileIds.indexOf(fileId)]]);
+            } else {
+              duplicates.get(mergeKey).push(fileStats[fileIds.indexOf(fileId)]);
+            }
+          }
+
+          if (!mergedResult.has(mergeKey)) {
+            mergedResult.set(mergeKey, { ...record });
             console.log(`Created new merged record for key: ${mergeKey}`);
           } else {
+            // Apply merge strategy
             Object.entries(record).forEach(([field, value]) => {
-              if (!mergedResult[mergeKey][field]) {
-                mergedResult[mergeKey][field] = value;
-                console.log(
-                  `Added field ${field} to existing record ${mergeKey}`
-                );
+              if (value === null || value === undefined || value === "") {
+                return; // Skip empty values
               }
+
+              const currentValue = mergedResult.get(mergeKey)[field];
+              let newValue = value;
+
+              switch (strategy) {
+                case "first":
+                  // Keep the first non-empty value
+                  if (
+                    currentValue !== null &&
+                    currentValue !== undefined &&
+                    currentValue !== ""
+                  ) {
+                    return;
+                  }
+                  break;
+                case "concatenate":
+                  // Concatenate values with comma if both exist
+                  if (currentValue && currentValue !== value) {
+                    newValue = `${currentValue}, ${value}`;
+                  }
+                  break;
+                case "latest":
+                default:
+                  // Latest value wins (default behavior)
+                  break;
+              }
+
+              mergedResult.get(mergeKey)[field] = newValue;
+              console.log(
+                `Updated field ${field} in record ${mergeKey} with value from file ${fileId}`
+              );
             });
           }
         } catch (error) {
@@ -119,26 +183,44 @@ export const mergeRecords = async (req, res) => {
     });
 
     console.log("\nMerge process completed");
-    console.log(`Total merged records: ${Object.keys(mergedResult).length}`);
-    if (Object.keys(mergedResult).length > 0) {
-      console.log("Sample merged record:", Object.values(mergedResult)[0]);
-    }
+    const finalResult = {
+      records: Array.from(mergedResult.values()),
+      stats: {
+        totalRecords: mergedResult.size,
+        duplicateKeys: Array.from(duplicates.entries()).map(([key, files]) => ({
+          key,
+          files,
+        })),
+        filesProcessed: fileStats,
+      },
+    };
 
-    // Send the merged result as response
-    const mergeId = Date.now(); // Use timestamp as a unique ID
-    console.log(
-      `Final mergedResult contains ${Object.keys(mergedResult).length} records.`
-    );
-    console.log(`Sample record:`, Object.values(mergedResult).slice(0, 5)); // Log first 5 records
-    fs.writeFileSync(
-      join(PROCESSED_DIR, `${mergeId}-merged.json`),
-      JSON.stringify(mergedResult, null, 2)
-    );
-    res.json(mergedResult);
+    // Save merge results
+    const mergeId = Date.now();
+    const resultPath = join(PROCESSED_DIR, `${mergeId}-merged.json`);
+    const statsPath = join(PROCESSED_DIR, `${mergeId}-info.json`);
+
+    await Promise.all([
+      fs.promises.writeFile(
+        resultPath,
+        JSON.stringify(finalResult.records, null, 2)
+      ),
+      fs.promises.writeFile(
+        statsPath,
+        JSON.stringify(finalResult.stats, null, 2)
+      ),
+    ]);
+
+    res.json({
+      mergeId,
+      ...finalResult,
+    });
   } catch (error) {
-    console.error("Merge error:", error.message);
-    res
-      .status(500)
-      .json({ error: "Failed to merge records", message: error.message });
+    console.error("Merge error:", error);
+    res.status(500).json({
+      error: "Failed to merge records",
+      message: error.message,
+      details: error.stack,
+    });
   }
 };

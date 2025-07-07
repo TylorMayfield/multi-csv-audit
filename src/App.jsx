@@ -20,11 +20,7 @@ function App() {
       name: "CSV Types",
       description: "Define and manage CSV types",
     },
-    {
-      id: "mapping",
-      name: "Column Mapping",
-      description: "Map columns between different CSV types",
-    },
+
     {
       id: "merge",
       name: "Merge Records",

@@ -7,18 +7,27 @@ export default function ColumnMapping() {
     const [sourceType, setSourceType] = useState('');
     const [targetType, setTargetType] = useState('');
     const [columnMappings, setColumnMappings] = useState([]);
+    const [primaryKey, setPrimaryKey] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     // Fetch CSV types
     useEffect(() => {
         const fetchTypes = async () => {
             try {
+                setLoading(true);
                 const response = await fetch('/api/csv-types');
                 if (response.ok) {
                     const data = await response.json();
-                    setTypes(data);
+                    setTypes(data || []);
+                } else {
+                    throw new Error('Failed to fetch types');
                 }
             } catch (error) {
                 console.error('Failed to fetch types:', error);
+                setError(error.message);
+            } finally {
+                setLoading(false);
             }
         };
 
@@ -32,10 +41,13 @@ export default function ColumnMapping() {
                 const response = await fetch('/api/mappings');
                 if (response.ok) {
                     const data = await response.json();
-                    setMappings(data);
+                    setMappings(data || {});
+                } else {
+                    throw new Error('Failed to fetch mappings');
                 }
             } catch (error) {
                 console.error('Failed to fetch mappings:', error);
+                setError(error.message);
             }
         };
 
@@ -49,6 +61,7 @@ export default function ColumnMapping() {
             const existingMapping = mappings[mappingKey];
             if (existingMapping) {
                 setColumnMappings(existingMapping.columnMappings);
+                setPrimaryKey(existingMapping.primaryKey || '');
             } else {
                 // Initialize empty mappings for all source columns
                 const sourceTypeObj = types.find(t => t.id === sourceType);
@@ -60,12 +73,18 @@ export default function ColumnMapping() {
                             transformation: 'none'
                         }))
                     );
+                    setPrimaryKey('');
                 }
             }
         }
     }, [sourceType, targetType, mappings, types]);
 
     const handleSaveMapping = async () => {
+        if (!primaryKey) {
+            alert('Please select a primary key column for merging');
+            return;
+        }
+
         try {
             const response = await fetch('/api/mappings', {
                 method: 'POST',
@@ -75,7 +94,8 @@ export default function ColumnMapping() {
                 body: JSON.stringify({
                     sourceType,
                     targetType,
-                    columnMappings
+                    columnMappings,
+                    primaryKey
                 })
             });
 
@@ -119,7 +139,7 @@ export default function ColumnMapping() {
                             className="input"
                         >
                             <option value="">Select source type...</option>
-                            {types.map((type) => (
+                            {(types || []).map((type) => (
                                 <option key={type.id} value={type.id}>
                                     {type.name}
                                 </option>
@@ -137,9 +157,27 @@ export default function ColumnMapping() {
                             className="input"
                         >
                             <option value="">Select target type...</option>
-                            {types.map((type) => (
+                            {(types || []).map((type) => (
                                 <option key={type.id} value={type.id}>
                                     {type.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Primary Key Column
+                        </label>
+                        <select
+                            value={primaryKey}
+                            onChange={(e) => setPrimaryKey(e.target.value)}
+                            className="input"
+                        >
+                            <option value="">Select primary key column...</option>
+                            {(sourceType && types.find(t => t.id === sourceType)?.columns || []).map((col) => (
+                                <option key={col.name} value={col.name}>
+                                    {col.name}
                                 </option>
                             ))}
                         </select>
@@ -167,7 +205,7 @@ export default function ColumnMapping() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
-                                {columnMappings.map((mapping, index) => (
+                                {(columnMappings || []).map((mapping, index) => (
                                     <tr key={index}>
                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                             {mapping.sourceColumn}
@@ -182,13 +220,11 @@ export default function ColumnMapping() {
                                                 className="input"
                                             >
                                                 <option value="">Select target column...</option>
-                                                {types
-                                                    .find(t => t.id === targetType)
-                                                    ?.columns.map(col => (
-                                                        <option key={col.name} value={col.name}>
-                                                            {col.name}
-                                                        </option>
-                                                    ))}
+                                                {(types.find(t => t.id === targetType)?.columns || []).map(col => (
+                                                    <option key={col.name} value={col.name}>
+                                                        {col.name}
+                                                    </option>
+                                                ))}
                                             </select>
                                         </td>
                                         <td className="whitespace-nowrap px-3 py-4 text-sm">
@@ -225,39 +261,52 @@ export default function ColumnMapping() {
             {/* Existing Mappings */}
             <div className="card">
                 <h2 className="text-lg font-semibold mb-4">Existing Mappings</h2>
-                <div className="space-y-4">
-                    {Object.entries(mappings).map(([key, mapping]) => (
-                        <div key={key} className="border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="text-sm font-medium">
-                                    {types.find(t => t.id === mapping.sourceType)?.name} →{' '}
-                                    {types.find(t => t.id === mapping.targetType)?.name}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                    Created: {new Date(mapping.created).toLocaleDateString()}
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                {mapping.columnMappings.map((colMap, index) => (
-                                    <div
-                                        key={index}
-                                        className="text-sm bg-gray-50 p-2 rounded flex items-center justify-between"
-                                    >
-                                        <span>{colMap.sourceColumn}</span>
-                                        <span className="text-gray-400">→</span>
-                                        <span>{colMap.targetColumn}</span>
+                {loading ? (
+                    <div className="text-center py-4">Loading...</div>
+                ) : error ? (
+                    <div className="text-center text-red-600 py-4">{error}</div>
+                ) : (
+                    <div className="space-y-4">
+                        {Object.entries(mappings || {}).map(([key, mapping]) => {
+                            const sourceTypeName = (types.find(t => t.id === mapping.sourceType)?.name) || 'Unknown';
+                            const targetTypeName = (types.find(t => t.id === mapping.targetType)?.name) || 'Unknown';
+                            
+                            return (
+                                <div key={key} className="border rounded-lg p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-sm font-medium">
+                                            {sourceTypeName} →{' '}
+                                            {targetTypeName}
+                                            <span className="ml-2 text-xs text-gray-500">
+                                                (Primary Key: {mapping.primaryKey || 'None'})
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            Created: {new Date(mapping.created).toLocaleDateString()}
+                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-
-                    {Object.keys(mappings).length === 0 && (
-                        <p className="text-center text-sm text-gray-500 py-4">
-                            No mappings created yet
-                        </p>
-                    )}
-                </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {(mapping.columnMappings || []).map((colMap, index) => (
+                                            <div
+                                                key={index}
+                                                className="text-sm bg-gray-50 p-2 rounded flex items-center justify-between"
+                                            >
+                                                <span>{colMap.sourceColumn}</span>
+                                                <ArrowsRightLeftIcon className="h-4 w-4 text-gray-400 mx-2" />
+                                                <span>{colMap.targetColumn}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {!Object.keys(mappings || {}).length && (
+                            <p className="text-center text-sm text-gray-500 py-4">
+                                No mappings created yet
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

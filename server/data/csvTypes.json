@@ -79,5 +79,56 @@
       { "name": "Managed Type", "type": "string", "required": false }
     ],
     "created": "2024-12-20T14:50:00.000Z"
+  },
+  {
+    "id": "1734706115850",
+    "name": "Active Directory Users",
+    "description": "Schema for Active Directory Users",
+    "columns": [
+      { "name": "Display Name", "type": "string", "required": true },
+      {
+        "name": "Directory synchronization",
+        "type": "string",
+        "required": true
+      },
+      { "name": "DirSyncEnabled", "type": "boolean", "required": true },
+      { "name": "User principal name", "type": "string", "required": true },
+      { "name": "Object Id", "type": "string", "required": true },
+      { "name": "First name", "type": "string", "required": false },
+      { "name": "Last name", "type": "string", "required": false },
+      {
+        "name": "Soft deletion time stamp",
+        "type": "string",
+        "required": false
+      },
+      { "name": "Initials", "type": "string", "required": false },
+      { "name": "UserStatus", "type": "string", "required": false },
+      { "name": "JobTitle", "type": "string", "required": false },
+      { "name": "Department", "type": "string", "required": false },
+      {
+        "name": "PreferredDataLocation",
+        "type": "string",
+        "required": false
+      },
+      { "name": "City", "type": "string", "required": false },
+      { "name": "CountryOrRegion", "type": "string", "required": false },
+      { "name": "Office", "type": "string", "required": false },
+      { "name": "StateOrProvince", "type": "string", "required": false },
+      { "name": "UsageLocation", "type": "string", "required": false },
+      { "name": "LastDirSyncTime", "type": "string", "required": false },
+      { "name": "SigninStatus", "type": "string", "required": false },
+      { "name": "Licenses", "type": "string", "required": false },
+      {
+        "name": "PasswordNeverExpires",
+        "type": "boolean",
+        "required": false
+      },
+      {
+        "name": "LastPasswordChangeTimestamp",
+        "type": "string",
+        "required": false
+      }
+    ],
+    "created": "2024-12-27T14:00:00.000Z"
   }
 ]

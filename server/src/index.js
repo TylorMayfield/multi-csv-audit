@@ -100,10 +100,6 @@ app.post("/api/types", async (req, res) => {
   }
 });
 
-app.post("/api/upload", upload.single("file"), (req, res) => {
-  res.status(200).send("File uploaded successfully");
-});
-
 app.get("/api/mappings", async (req, res) => {
   try {
     const mappings = JSON.parse(await fs.readFile(MAPPINGS_FILE, "utf-8"));

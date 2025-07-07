@@ -60,15 +60,17 @@ export default function FileUpload() {
             body: formData,
           });
 
+          const data = await response.json();
+          
           if (!response.ok) {
-            throw new Error("Upload failed");
+            throw new Error(data.details || data.error || 'Upload failed');
           }
         }
         fetchFiles();
         alert("File uploaded successfully!");
       } catch (error) {
         console.error("Upload error:", error);
-        alert("Failed to upload file(s)");
+        alert(error.message || "Failed to upload file(s)");
       } finally {
         setUploading(false);
       }
