@@ -1,14 +1,23 @@
-# CSV Consolidation Tool
+# Multi-Platform User Audit System
 
-A powerful tool for consolidating and merging CSV data from multiple sources with different schemas.
+A comprehensive solution for consolidating and auditing user data across multiple platforms. This system helps organizations track user presence across different systems and identify discrepancies, missing users, and potential security risks.
 
-## Features
+## 🚀 Features
 
-- **CSV Type Definition**: Define different CSV types with expected columns and data types
-- **Column Mapping**: Map columns between different CSV sources
-- **Data Validation**: Validate CSV data against defined types
-- **Record Merging**: Merge records from different sources based on key fields
-- **Data Export**: Export consolidated data in various formats
+### Core Functionality
+- **Multi-Platform Data Consolidation**: Import CSV data from various platforms (Active Directory, Microsoft 365, MDM, etc.)
+- **Intelligent User Matching**: Automatically identify and consolidate users across platforms using configurable matching rules
+- **User Audit Dashboard**: Visual overview of user presence and platform statistics
+- **Missing User Detection**: Identify users who exist in one platform but are missing from others
+- **Duplicate User Management**: Detect and merge duplicate user records
+- **Comprehensive Reporting**: Export audit data in multiple formats (CSV, JSON)
+
+### Advanced Features
+- **Platform Type Versioning**: Support for evolving data schemas over time
+- **Configurable User Identification**: Flexible primary key generation (first initial + last name, email, custom)
+- **Audit Trail**: Complete history of all user changes and system actions
+- **Data Validation**: Ensure data integrity with schema validation
+- **RESTful API**: Full API access for integration with other systems
 
 ## Getting Started
 

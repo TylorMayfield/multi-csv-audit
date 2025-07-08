@@ -25,3 +25,5 @@ dist-ssr
 *.json
 *.csv
 *.json
+/.next
+data/audit_system.db
